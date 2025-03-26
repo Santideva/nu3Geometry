@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import SphericalCustomGeometry from '../geometries/sphericalCustomGeometry';
 import DynamicSphericalMaterial from '../materials/customShaderMaterial';
+import { UIControlManager } from '../ui/uiControlManager';
 import Logger from '../utils/logger';
 
 class SphericalVisualizer {
@@ -14,31 +15,28 @@ class SphericalVisualizer {
             })
         );
 
-        // State management
+        // State management with shape morphing support
         this.state = {
             // Configurable parameters
             radius: config.radius || 100,
             polygonCount: config.polygonCount || 500,
+            
+            // Shape morphing parameters
+            currentShape: 'Sphere',
+            dynamicEvolution: true,
+            morphSpeed: 0.5,
             
             // Simulation parameters
             time: 0,
             paused: false,
             
             // Visualization modes
-            renderMode: 'points', // Could switch between points, wireframe, etc.
+            renderMode: 'points', 
             
             // Performance and debug info
             fps: 0,
             renderCount: 0
         };
-
-        this.logger.debug('Initial State Configuration', 
-            this.logger.createContext({
-                radius: this.state.radius,
-                polygonCount: this.state.polygonCount,
-                renderMode: this.state.renderMode
-            })
-        );
 
         // Scene setup
         try {
@@ -72,6 +70,9 @@ class SphericalVisualizer {
         this.material = null;
         this.points = null;
 
+        // Initialize UI Controls
+        this.initializeUIControls();
+
         this.logger.debug('Preparing to Initialize Visualization', 
             this.logger.createContext({
                 method: 'constructor',
@@ -79,6 +80,55 @@ class SphericalVisualizer {
             })
         );
 
+        this.initializeVisualization();
+    }
+
+    // Initialize UI Controls
+    initializeUIControls() {
+        try {
+            this.uiControls = new UIControlManager(this, {
+                radiusMin: 50,
+                radiusMax: 300,
+                polygonMin: 100,
+                polygonMax: 1000,
+                availableShapes: ['Sphere', 'Cube', 'Cone', 'Cylinder', 'Torus']
+            });
+
+            this.logger.info('UI Controls Initialized', 
+                this.logger.createContext({
+                    method: 'initializeUIControls',
+                    controllerCount: Object.keys(this.uiControls.controllers).length
+                })
+            );
+        } catch (error) {
+            this.logger.error('UI Controls Initialization Failed', 
+                this.logger.createContext({ 
+                    error: error.message,
+                    errorStack: error.stack,
+                    timestamp: new Date().toISOString()
+                })
+            );
+        }
+    }
+
+    // Method to morph shape
+    morphToShape(shapeName) {
+        this.logger.info('Morphing Shape', 
+            this.logger.createContext({
+                newShape: shapeName,
+                currentShape: this.state.currentShape
+            })
+        );
+
+        // Update current shape in state
+        this.state.currentShape = shapeName;
+
+        // Remove existing points
+        if (this.points) {
+            this.scene.remove(this.points);
+        }
+
+        // Reinitialize visualization with new shape parameters
         this.initializeVisualization();
     }
 
@@ -91,16 +141,22 @@ class SphericalVisualizer {
         );
 
         try {
-            // Create and configure geometry
-            this.geometry = new SphericalCustomGeometry(100, 500, {
-                morphSpeed: 0.2,
-                dynamicEvolution: true
-            });
+            // Create and configure geometry with current shape parameters
+            this.geometry = new SphericalCustomGeometry(
+                this.state.radius, 
+                this.state.polygonCount, 
+                {
+                    morphSpeed: this.state.morphSpeed,
+                    dynamicEvolution: this.state.dynamicEvolution,
+                    initialShape: this.state.currentShape
+                }
+            );
 
             this.logger.debug('Geometry Created', 
                 this.logger.createContext({
                     radius: this.state.radius,
                     polygonCount: this.state.polygonCount,
+                    currentShape: this.state.currentShape,
                     vertexCount: this.geometry.attributes.position.count
                 })
             );
@@ -108,22 +164,9 @@ class SphericalVisualizer {
             // Create and configure material
             this.material = new DynamicSphericalMaterial();
 
-            this.logger.debug('Material Created', 
-                this.logger.createContext({
-                    materialType: 'DynamicSphericalMaterial'
-                })
-            );
-
             // Create visualization object
             this.points = new THREE.Points(this.geometry, this.material);
             this.scene.add(this.points);
-
-            this.logger.debug('Points Object Added to Scene', 
-                this.logger.createContext({
-                    pointsObjectCreated: true,
-                    sceneObjectCount: this.scene.children.length
-                })
-            );
 
             // Position camera
             this.camera.position.z = this.state.radius * 2;
@@ -338,6 +381,19 @@ class SphericalVisualizer {
             this.animate();
         }
     }
+
+    // Cleanup method to dispose of resources
+    dispose() {
+        // Dispose of UI controls
+        if (this.uiControls) {
+            this.uiControls.dispose();
+        }
+
+        // Additional cleanup logic
+        this.scene.remove(this.points);
+        this.geometry.dispose();
+        this.material.dispose();
+    }
 }
 
-export default SphericalVisualizer;     
+export default SphericalVisualizer;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import logger from '../utils/logger.js';
+import { ShapeMorphEngine } from './shapeMorphEngine.js';
 
 export default class SphericalCustomGeometry extends THREE.BufferGeometry {
     constructor(radius = 100, polygonCount = 500, config = {}) {
@@ -12,15 +13,27 @@ export default class SphericalCustomGeometry extends THREE.BufferGeometry {
             gridWidth: config.gridWidth || 200,
             gridHeight: config.gridHeight || 200,
             morphSpeed: config.morphSpeed || 0.5,
-            dynamicEvolution: config.dynamicEvolution || true
+            dynamicEvolution: config.dynamicEvolution || true,
+            
+            // Shape morphing parameters
+            currentShape: config.currentShape || 'Sphere',
+            shapeInterpolation: null
         };
+
+        // Initialize shape morph engine
+        this.morphEngine = new ShapeMorphEngine(radius);
 
         // Comprehensive property matrix
         this.propertyMatrix = this.initializePropertyMatrix();
 
         // Scalar field generation parameters
         this.scalarField = {
-            time: 0
+            time: 0,
+            shapeTransition: {
+                from: null,
+                to: null,
+                progress: 0
+            }
         };
 
         // Generate initial geometry
@@ -71,10 +84,32 @@ export default class SphericalCustomGeometry extends THREE.BufferGeometry {
 
     // Combined Signed Distance Function (SDF)
     combinedSDF(theta, phi, props, time) {
-        const { radius } = this.config;
+        const { radius, currentShape, shapeInterpolation } = this.config;
         
-        // Base spherical coordinate with scalar field modification
-        let baseSDF = radius + (
+        // Get current shape's SDF function
+        const currentShapeSDF = ShapeMorphEngine.shapeSDFs[currentShape];
+        
+        // Base shape transformation
+        let baseSDF = currentShapeSDF(theta, phi, radius);
+        
+        // Apply shape interpolation if in progress
+        if (shapeInterpolation) {
+            const fromSDF = ShapeMorphEngine.shapeSDFs[shapeInterpolation.from];
+            const toSDF = ShapeMorphEngine.shapeSDFs[shapeInterpolation.to];
+            
+            // Interpolate between shapes
+            const fromValue = fromSDF(theta, phi, radius);
+            const toValue = toSDF(theta, phi, radius);
+            
+            baseSDF = THREE.MathUtils.lerp(
+                fromValue, 
+                toValue, 
+                this.scalarField.shapeTransition.progress
+            );
+        }
+        
+        // Additional scalar field modification
+        baseSDF += (
             Math.sin(theta * props.rugosity + time) * props.anisotropy * 10 +
             Math.cos(phi * props.sphericity + time) * props.convexity * 5
         );
@@ -150,7 +185,8 @@ export default class SphericalCustomGeometry extends THREE.BufferGeometry {
             logger.info('SphericalCustomGeometry Generated', {
                 radius,
                 polygonCount,
-                dynamicTime: this.scalarField.time
+                dynamicTime: this.scalarField.time,
+                currentShape: this.config.currentShape
             });
 
         } catch (error) {
@@ -162,15 +198,74 @@ export default class SphericalCustomGeometry extends THREE.BufferGeometry {
         }
     }
 
+    // Method to morph between shapes
+    morphToShape(targetShape, duration = 1.0) {
+        const { currentShape } = this.config;
+        
+        // Validate shape exists
+        if (!ShapeMorphEngine.shapeSDFs[targetShape]) {
+            logger.error('Invalid Shape Morphing Target', {
+                requestedShape: targetShape,
+                availableShapes: Object.keys(ShapeMorphEngine.shapeSDFs)
+            });
+            return;
+        }
+        
+        // Start shape interpolation
+        this.config.shapeInterpolation = {
+            from: currentShape,
+            to: targetShape,
+            duration
+        };
+        
+        // Reset transition progress
+        this.scalarField.shapeTransition = {
+            from: currentShape,
+            to: targetShape,
+            progress: 0
+        };
+        
+        // Update current shape
+        this.config.currentShape = targetShape;
+        
+        logger.info('Shape Morphing Initiated', {
+            fromShape: currentShape,
+            toShape: targetShape,
+            duration
+        });
+    }
+
     // Update method for dynamic evolution
     update(deltaTime) {
         if (this.config.dynamicEvolution) {
             this.scalarField.time += deltaTime * this.config.morphSpeed;
+            
+            // Handle shape interpolation
+            if (this.config.shapeInterpolation) {
+                const { progress, from, to } = this.scalarField.shapeTransition;
+                const { duration } = this.config.shapeInterpolation;
+                
+                // Increment progress
+                this.scalarField.shapeTransition.progress = 
+                    Math.min(progress + deltaTime / duration, 1);
+                
+                // Complete interpolation
+                if (this.scalarField.shapeTransition.progress >= 1) {
+                    this.config.shapeInterpolation = null;
+                    logger.info('Shape Morphing Complete', { 
+                        fromShape: from, 
+                        toShape: to 
+                    });
+                }
+            }
+            
+            // Regenerate geometry
             this.generateScalarFieldGeometry();
             
             logger.debug('Geometry Updated', {
                 time: this.scalarField.time,
-                morphSpeed: this.config.morphSpeed
+                morphSpeed: this.config.morphSpeed,
+                currentShape: this.config.currentShape
             });
         }
     }
