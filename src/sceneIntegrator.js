@@ -92,10 +92,10 @@ class SphericalVisualizer {
 
         try {
             // Create and configure geometry
-            this.geometry = new SphericalCustomGeometry(
-                this.state.radius, 
-                this.state.polygonCount
-            );
+            this.geometry = new SphericalCustomGeometry(100, 500, {
+                morphSpeed: 0.2,
+                dynamicEvolution: true
+            });
 
             this.logger.debug('Geometry Created', 
                 this.logger.createContext({
@@ -248,6 +248,7 @@ class SphericalVisualizer {
             const currentTime = performance.now() * 0.001;
             const deltaTime = currentTime - this.state.time;
             this.state.time = currentTime;
+            this.geometry.update(deltaTime)
 
             this.logger.trace('Animation Cycle Started', 
                 this.logger.createContext({

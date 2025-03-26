@@ -14,10 +14,11 @@
   "keywords": [],
   "description": "",
   "devDependencies": {
-    "vite": "^6.2.3",
-    "raw-loader": "^4.0.2"
+    "raw-loader": "^4.0.2",
+    "vite": "^6.2.3"
   },
   "dependencies": {
+    "dat.gui": "^0.7.9",
     "three": "^0.174.0"
   }
 }
