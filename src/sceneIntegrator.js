@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import SphericalCustomGeometry from '../geometries/sphericalCustomGeometry';
 import DynamicSphericalMaterial from '../materials/customShaderMaterial';
 import { UIControlManager } from '../ui/uiControlManager';
+import SceneCameraManager from '../scene/SceneCameraManager';
+import CameraControlsManager from '../ui/cameraControlsManager';
 import Logger from '../utils/logger';
 
 class SphericalVisualizer {
@@ -41,8 +43,19 @@ class SphericalVisualizer {
         // Scene setup
         try {
             this.scene = new THREE.Scene();
-            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             this.renderer = new THREE.WebGLRenderer({ antialias: true });
+
+            // Initialize Scene Camera Manager
+            this.sceneCameraManager = new SceneCameraManager({
+                initialPosition: { x: 0, y: 0, z: this.state.radius * 2 },
+                dynamicPerspective: true
+            });
+
+            // Initialize Camera Controls Manager
+            this.cameraControlsManager = new CameraControlsManager(
+                this.sceneCameraManager, 
+                this.renderer
+            );
 
             this.logger.info('Three.js Components Initialized', 
                 this.logger.createContext({
@@ -69,6 +82,7 @@ class SphericalVisualizer {
         this.geometry = null;
         this.material = null;
         this.points = null;
+        this.camera = null;
 
         // Initialize UI Controls
         this.initializeUIControls();
@@ -128,6 +142,11 @@ class SphericalVisualizer {
             this.scene.remove(this.points);
         }
 
+        // Update lighting for new shape
+        if (this.sceneCameraManager) {
+            this.sceneCameraManager.updateLighting(shapeName);
+        }
+
         // Reinitialize visualization with new shape parameters
         this.initializeVisualization();
     }
@@ -168,14 +187,23 @@ class SphericalVisualizer {
             this.points = new THREE.Points(this.geometry, this.material);
             this.scene.add(this.points);
 
-            // Position camera
-            this.camera.position.z = this.state.radius * 2;
+            // Use SceneCameraManager for camera and lighting
+            if (this.sceneCameraManager) {
+                this.camera = this.sceneCameraManager.initializeCamera(this.renderer);
+                this.sceneCameraManager.initializeLighting(this.scene);
+                
+                // Dynamically update perspective based on geometry
+                this.sceneCameraManager.updatePerspective(
+                    this.state.radius, 
+                    this.state.polygonCount
+                );
+            }
 
             this.logger.info('Visualization Components Initialized Successfully', 
                 this.logger.createContext({
                     geometryVertexCount: this.geometry.attributes.position.count,
                     renderMode: this.state.renderMode,
-                    cameraDistance: this.camera.position.z
+                    cameraDistance: this.camera ? this.camera.position.z : 'N/A'
                 })
             );
         } catch (error) {
@@ -291,7 +319,7 @@ class SphericalVisualizer {
             const currentTime = performance.now() * 0.001;
             const deltaTime = currentTime - this.state.time;
             this.state.time = currentTime;
-            this.geometry.update(deltaTime)
+            this.geometry.update(deltaTime);
 
             this.logger.trace('Animation Cycle Started', 
                 this.logger.createContext({
@@ -389,10 +417,32 @@ class SphericalVisualizer {
             this.uiControls.dispose();
         }
 
+        // Dispose of Camera Controls
+        if (this.cameraControlsManager) {
+            this.cameraControlsManager.dispose();
+        }
+
+        // Dispose of SceneCameraManager resources
+        if (this.sceneCameraManager) {
+            this.sceneCameraManager.dispose();
+        }
+
         // Additional cleanup logic
         this.scene.remove(this.points);
-        this.geometry.dispose();
-        this.material.dispose();
+        
+        if (this.geometry) {
+            this.geometry.dispose();
+        }
+        
+        if (this.material) {
+            this.material.dispose();
+        }
+
+        this.logger.info('SphericalVisualizer Resources Disposed', 
+            this.logger.createContext({
+                timestamp: new Date().toISOString()
+            })
+        );
     }
 }
 
